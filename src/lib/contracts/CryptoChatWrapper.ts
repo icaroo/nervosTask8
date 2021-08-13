@@ -1,38 +1,43 @@
 import Web3 from 'web3';
-import * as SimpleStorageJSON from '../../../build/contracts/SimpleStorage.json';
-import { SimpleStorage } from '../../types/SimpleStorage';
+import * as CryptoChatJSON from '../../../build/contracts/CryptoChat.json';
+import { CryptoChat } from '../../types/CryptoChat';
 
 const DEFAULT_SEND_OPTIONS = {
     gas: 6000000
 };
 
-export class SimpleStorageWrapper {
+export class CryptoChatWrapper {
     web3: Web3;
 
-    contract: SimpleStorage;
+    contract: CryptoChat;
 
     address: string;
 
     constructor(web3: Web3) {
         this.web3 = web3;
-        this.contract = new web3.eth.Contract(SimpleStorageJSON.abi as any) as any;
+        this.contract = new web3.eth.Contract(CryptoChatJSON.abi as any) as any;
     }
 
     get isDeployed() {
         return Boolean(this.address);
     }
 
-    async getStoredValue(fromAddress: string) {
+    async getChatMessageValue(fromAddress: string): Promise<string> {
         const data = await this.contract.methods.get().call({ from: fromAddress });
+
+        return data as string;
+    }
+
+    async getTotalMessageValue(fromAddress: string){
+        const data = await this.contract.methods.getTotalMessage().call({ from: fromAddress });
 
         return parseInt(data, 10);
     }
 
-    async setStoredValue(value: number, fromAddress: string) {
-        const tx = await this.contract.methods.set(value).send({
+    async setChatMessageValue(message: string, fromAddress: string) {
+        const tx = await this.contract.methods.set(message).send({
             ...DEFAULT_SEND_OPTIONS,
-            from: fromAddress,
-            value
+            from: fromAddress
         });
 
         return tx;
@@ -41,7 +46,7 @@ export class SimpleStorageWrapper {
     async deploy(fromAddress: string) {
         const deployTx = await (this.contract
             .deploy({
-                data: SimpleStorageJSON.bytecode,
+                data: CryptoChatJSON.bytecode,
                 arguments: []
             })
             .send({
@@ -51,7 +56,6 @@ export class SimpleStorageWrapper {
             } as any) as any);
 
         this.useDeployed(deployTx.contractAddress);
-
         return deployTx.transactionHash;
     }
 

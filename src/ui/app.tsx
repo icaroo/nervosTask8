@@ -6,10 +6,11 @@ import Web3 from 'web3';
 import { ToastContainer, toast } from 'react-toastify';
 import './app.scss';
 import 'react-toastify/dist/ReactToastify.css';
+
 import { PolyjuiceHttpProvider } from '@polyjuice-provider/web3';
 import { AddressTranslator } from 'nervos-godwoken-integration';
 
-import { SimpleStorageWrapper } from '../lib/contracts/SimpleStorageWrapper';
+import { CryptoChatWrapper } from '../lib/contracts/CryptoChatWrapper';
 import { CONFIG } from '../config';
 
 async function createWeb3() {
@@ -41,18 +42,21 @@ async function createWeb3() {
 
 export function App() {
     const [web3, setWeb3] = useState<Web3>(null);
-    const [contract, setContract] = useState<SimpleStorageWrapper>();
+    const [contract, setContract] = useState<CryptoChatWrapper>();
     const [accounts, setAccounts] = useState<string[]>();
     const [l2Balance, setL2Balance] = useState<bigint>();
     const [existingContractIdInputValue, setExistingContractIdInputValue] = useState<string>();
-    const [storedValue, setStoredValue] = useState<number | undefined>();
+    const [messageValue, setChatMessageValue] = useState<Array<string>>([]);
+    const [totalValue, setTotalMessageValue] = useState<number | undefined>();
     const [deployTxHash, setDeployTxHash] = useState<string | undefined>();
     const [polyjuiceAddress, setPolyjuiceAddress] = useState<string | undefined>();
     const [transactionInProgress, setTransactionInProgress] = useState(false);
     const toastId = React.useRef(null);
-    const [newStoredNumberInputValue, setNewStoredNumberInputValue] = useState<
-        number | undefined
+    const [newMessageStringInputValue, setNewMessageStringInputValue] = useState<
+        string | undefined
     >();
+
+    const account = accounts?.[0];
 
     useEffect(() => {
         if (accounts?.[0]) {
@@ -84,10 +88,8 @@ export function App() {
         }
     }, [transactionInProgress, toastId.current]);
 
-    const account = accounts?.[0];
-
     async function deployContract() {
-        const _contract = new SimpleStorageWrapper(web3);
+        const _contract = new CryptoChatWrapper(web3);
 
         try {
             setDeployTxHash(undefined);
@@ -111,29 +113,80 @@ export function App() {
         }
     }
 
-    async function getStoredValue() {
-        const value = await contract.getStoredValue(account);
-        toast('Successfully read latest stored value.', { type: 'success' });
+    useEffect(() => {
+        if (!contract || !account) {
+            return () => undefined;
+        }
 
-        setStoredValue(value);
-    }
+        const id = setInterval(async () => {
+            try {
+                const message = await contract.getChatMessageValue(account);
+                setChatMessageValue(prevState => {
+                    if (Array.isArray(prevState)) {
+                        if (!prevState.includes(message)) {
+                            return [...prevState, message];
+                        }
+                        return [...prevState];
+                    }
+                    return [message];
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }, 1000);
+        return () => clearInterval(id);
+    }, [contract, account]);
+
+    useEffect(() => {
+        if (!contract || !account) {
+            return () => undefined;
+        }
+
+        const id = setInterval(async () => {
+            try {
+                const totalMessage = await contract.getTotalMessageValue(account);
+                setTotalMessageValue(prevState => {
+                    if (prevState) {
+                        if (prevState < totalMessage) {
+                            return totalMessage;
+                        }
+                        return prevState;
+                    }
+                    return totalMessage;
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }, 1000);
+        return () => clearInterval(id);
+    }, [contract, account]);
+
+    // async function getChatMessageValue() {
+    //     const value = await contract.getChatMessageValue(account);
+    //     toast('Successfully read latest stored value.', { type: 'success' });
+
+    //     setChatMessageValue(value);
+    // }
 
     async function setExistingContractAddress(contractAddress: string) {
-        const _contract = new SimpleStorageWrapper(web3);
+        const _contract = new CryptoChatWrapper(web3);
         _contract.useDeployed(contractAddress.trim());
 
+        console.log('Deployed Contract Address:', contractAddress);
+
         setContract(_contract);
-        setStoredValue(undefined);
+        setChatMessageValue(undefined);
     }
 
-    async function setNewStoredValue() {
+    async function setNewChatMessageValue() {
         try {
             setTransactionInProgress(true);
-            await contract.setStoredValue(newStoredNumberInputValue, account);
-            toast(
-                'Successfully set latest stored value. You can refresh the read value now manually.',
-                { type: 'success' }
-            );
+            await contract.setChatMessageValue(newMessageStringInputValue, account);
+            // toast(
+            //     'Successfully set latest stored value. You can refresh the read value now manually.',
+            //     { type: 'success' }
+            // );
+            toast('Successfully set latest message. ', { type: 'success' });
         } catch (error) {
             console.error(error);
             toast.error(
@@ -183,18 +236,17 @@ export function App() {
             <br />
             <hr />
             <p>
-                The button below will deploy a SimpleStorage smart contract where you can store a
-                number value. By default the initial stored value is equal to 123 (you can change
-                that in the Solidity smart contract). After the contract is deployed you can either
-                read stored value from smart contract or set a new one. You can do that using the
+                The button below will deploy a new smart contract where you can use as a chat. You
+                can create a new chat or access a existent one, using the deployed contract address.
+                The chat also register the total of Messages registered. You can do that using the
                 interface below.
             </p>
             <button onClick={deployContract} disabled={!l2Balance}>
-                Deploy contract
+                Deploy contract to create a new Chat
             </button>
             &nbsp;or&nbsp;
             <input
-                placeholder="Existing contract id"
+                placeholder="Existing contract id/address"
                 onChange={e => setExistingContractIdInputValue(e.target.value)}
             />
             <button
@@ -205,18 +257,20 @@ export function App() {
             </button>
             <br />
             <br />
-            <button onClick={getStoredValue} disabled={!contract}>
-                Get stored value
-            </button>
-            {storedValue ? <>&nbsp;&nbsp;Stored value: {storedValue.toString()}</> : null}
+            <div>Total Messages: {totalValue}</div>
+            {messageValue ? (
+                <div>
+                    Chats :
+                    {messageValue.map(i => (
+                        <p key={`m:${i}`}>{i}</p>
+                    ))}
+                </div>
+            ) : null}
             <br />
             <br />
-            <input
-                type="number"
-                onChange={e => setNewStoredNumberInputValue(parseInt(e.target.value, 10))}
-            />
-            <button onClick={setNewStoredValue} disabled={!contract}>
-                Set new stored value
+            <input onChange={e => setNewMessageStringInputValue(e.target.value)} />
+            <button onClick={setNewChatMessageValue} disabled={!contract}>
+                send
             </button>
             <br />
             <br />
