@@ -13,6 +13,8 @@ import { AddressTranslator } from 'nervos-godwoken-integration';
 import { CryptoChatWrapper } from '../lib/contracts/CryptoChatWrapper';
 import { CONFIG } from '../config';
 
+import * as CompiledContractArtifact from '../../build/contracts/ERC20.json';
+
 async function createWeb3() {
     // Modern dapp browsers...
     if ((window as any).ethereum) {
@@ -55,9 +57,15 @@ export function App() {
     const [newMessageStringInputValue, setNewMessageStringInputValue] = useState<
         string | undefined
     >();
+    const [depositAddress, setDepositAddress] = useState<string | undefined>();
+    const [balanceOf, setBalanceOf] = useState<bigint>();
+
+    const force_bridge = 'https://force-bridge-test.ckbapp.dev/bridge/Ethereum/Nervos';
+    const SUDT_Proxy = '0xf8e74012B83Cf046b894f951E8E37baC28AA2411';
 
     const account = accounts?.[0];
 
+    // PolyJuiceAddress
     useEffect(() => {
         if (accounts?.[0]) {
             const addressTranslator = new AddressTranslator();
@@ -67,6 +75,7 @@ export function App() {
         }
     }, [accounts?.[0]]);
 
+    // Toast Transaction
     useEffect(() => {
         if (transactionInProgress && !toastId.current) {
             toastId.current = toast.info(
@@ -88,6 +97,7 @@ export function App() {
         }
     }, [transactionInProgress, toastId.current]);
 
+    // Deploy Contract
     async function deployContract() {
         const _contract = new CryptoChatWrapper(web3);
 
@@ -113,6 +123,7 @@ export function App() {
         }
     }
 
+    // Get Message
     useEffect(() => {
         if (!contract || !account) {
             return () => undefined;
@@ -137,6 +148,7 @@ export function App() {
         return () => clearInterval(id);
     }, [contract, account]);
 
+    // get Total Message
     useEffect(() => {
         if (!contract || !account) {
             return () => undefined;
@@ -161,13 +173,7 @@ export function App() {
         return () => clearInterval(id);
     }, [contract, account]);
 
-    // async function getChatMessageValue() {
-    //     const value = await contract.getChatMessageValue(account);
-    //     toast('Successfully read latest stored value.', { type: 'success' });
-
-    //     setChatMessageValue(value);
-    // }
-
+    // Set Existing Contract Address
     async function setExistingContractAddress(contractAddress: string) {
         const _contract = new CryptoChatWrapper(web3);
         _contract.useDeployed(contractAddress.trim());
@@ -178,14 +184,11 @@ export function App() {
         setChatMessageValue(undefined);
     }
 
+    // Set New Message
     async function setNewChatMessageValue() {
         try {
             setTransactionInProgress(true);
             await contract.setChatMessageValue(newMessageStringInputValue, account);
-            // toast(
-            //     'Successfully set latest stored value. You can refresh the read value now manually.',
-            //     { type: 'success' }
-            // );
             toast('Successfully set latest message. ', { type: 'success' });
         } catch (error) {
             console.error(error);
@@ -197,6 +200,7 @@ export function App() {
         }
     }
 
+    // Set Layer 2 Balance
     useEffect(() => {
         if (web3) {
             return;
@@ -216,6 +220,34 @@ export function App() {
             }
         })();
     });
+
+    const getSUDTBalance = async () => {
+        const contract = new web3.eth.Contract(CompiledContractArtifact.abi as any, SUDT_Proxy);
+
+        const _balanceOf = await contract.methods.balanceOf(polyjuiceAddress).call({
+            from: accounts?.[0]
+        });
+        console.log('BALACE::', _balanceOf);
+        setBalanceOf(_balanceOf);
+    };
+
+    const redirect = () => {
+        window.location.href = force_bridge;
+    };
+
+    const generateLayer2DepositAddress = async () => {
+        const addressTranslator = new AddressTranslator();
+        const _depositAddress = await addressTranslator.getLayer2DepositAddress(
+            web3,
+            accounts?.[0]
+        );
+
+        console.log(`Layer 2 Deposit Address on Layer 1: \n${_depositAddress.addressString}`);
+
+        setDepositAddress(_depositAddress.addressString);
+
+        getSUDTBalance();
+    };
 
     const LoadingIndicator = () => <span className="rotating-icon">⚙️</span>;
 
@@ -274,6 +306,29 @@ export function App() {
             </button>
             <br />
             <br />
+            <br />
+            <br />
+            <hr />
+            Your ETH address: <b>{accounts?.[0]}</b>
+            <br />
+            <br />
+            {!depositAddress && (
+                <button onClick={generateLayer2DepositAddress}>Get Layer 2 Deposit Address</button>
+            )}
+            <br />
+            <div>
+                Your Layer 2 Deposit Address on Layer 1:
+                {depositAddress}
+            </div>
+            <br />
+            <br />
+            <button onClick={redirect}> Get sent to the Force Bridge</button>
+            <br />
+            <br />
+            Place the Layer 2 Deposit Address as the recipient on the Force Bridge.
+            <br />
+            <br />
+            Your Polyjuice address: <b>{polyjuiceAddress || ' - '}</b>
             <br />
             <br />
             <hr />
